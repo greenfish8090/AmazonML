@@ -6,7 +6,7 @@ from torch import optim
 import argparse
 import numpy as np
 import pandas as pd
-import os
+import os, time
 from dataset import EmbeddingDataset
 
 
@@ -15,6 +15,8 @@ class Trainer(nn.Module):
         super(Trainer, self).__init__()
         self.args = args
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.mean = 6.5502
+        self.std = 0.9601
         self.get_model(self.args.features) # Creating Regressor
         if not pred:
             self.get_data(self.args.seed, self.args.batch_size) # Creating Dataloaders for Train and val
@@ -22,6 +24,9 @@ class Trainer(nn.Module):
 
         if not os.path.exists(self.args.save):
             os.mkdir(self.args.save)
+        
+        if self.args.load_ckpt is not None:
+            load(self.args.load_ckpt)
 
     # Creating regressor
     def get_model(self, features=768):
@@ -35,6 +40,7 @@ class Trainer(nn.Module):
     # Creating Optimizer
     def get_training_utils(self):
         self.optimizer = optim.Adam(self.regressor.parameters(), lr=self.args.lr, amsgrad=True)
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min')
 
     # Forward pass
     def forward(self, x):
@@ -44,6 +50,7 @@ class Trainer(nn.Module):
     def train_epoch(self, epoch):
         self.regressor.train()
         epoch_loss = 0
+        initial_time = time.time()
         for batch_idx, (emb, val) in enumerate(self.trainloader):
             self.optimizer.zero_grad()
             output = self(emb.to(self.device, torch.float64)).squeeze(1)
@@ -51,7 +58,7 @@ class Trainer(nn.Module):
             epoch_loss += loss.item() 
             loss.backward()
             self.optimizer.step()
-        print('Train Epoch: {} Loss: {:.6f}'.format(epoch, epoch_loss /(batch_idx + 1) ), flush=True)
+        print('Train Epoch: {} Loss: {:.6f} LR: {} Time{}'.format(epoch, epoch_loss /(batch_idx + 1) , self.optimizer.param_groups[0]['lr'], time.time()-initial_time), flush=True)
         return epoch_loss / (batch_idx + 1)
 
     # valing loop for one epoch using complete valset
@@ -63,6 +70,8 @@ class Trainer(nn.Module):
             emb = emb.to(self.device, torch.float64)
             val = val.to(self.device, torch.float64)
             output = self(emb).squeeze(1)
+            output = torch.exp(output * self.std + self.mean)
+            val = torch.exp(val * self.std + self.mean)
             mape += torch.sum(torch.abs(output-val) / (torch.abs(val) + 1e-8)).item()
             mse += nn.MSELoss(reduction='sum')(output, val).item()
         print("MAPE Loss at epoch {} is {}% and MSE Loss is {}".format(epoch, 100 * mape/len(self.valloader.dataset), mse/len(self.valloader.dataset)), flush=True)
@@ -79,6 +88,7 @@ class Trainer(nn.Module):
             self.loss.append(loss)
             if epoch % self.args.val_interval == 0:
                 mape, mse = self.val(epoch)
+                self.scheduler.step(mse)
                 self.mape.append(mape)
                 self.mse.append(mse)
                 if mse < self.best_mse:
@@ -112,13 +122,14 @@ def main():
     parser.add_argument('--train_csv_path', '-ctr', default='/home/pbalaji/AmazonML/dataset/split_train.csv', type=str)
     parser.add_argument('--val_csv_path', '-cte', default='/home/pbalaji/AmazonML/dataset/split_val.csv', type=str)
     parser.add_argument('--epochs', '-e', default=500, type=int)
-    parser.add_argument('--lr', '-l', default=0.1, type=float)
+    parser.add_argument('--lr', '-l', default=0.01, type=float)
     parser.add_argument('--batch_size', '-b', default=128, type=int)
     parser.add_argument('--features', '-f', default=768, type=int)
     parser.add_argument('--seed', '-r', default=421, type=int)
     parser.add_argument('--log_interval', '-q', default=10000, type=int)
     parser.add_argument('--val_interval', '-t', default=5, type=int)
     parser.add_argument('--save', '-s', default='models/', type=str)
+    parser.add_argument('--load_ckpt', '-lc', default=None, type=str)
     args = parser.parse_args()
 
     # python train.py -dtr dataset/bert_base_uncased_train_embeddings.npy -dte dataset/bert_base_uncased_train_embeddings.npy -e 200 -b 64 -f 768 -q 10000 -t 5 -s model/
