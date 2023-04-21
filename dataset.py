@@ -12,6 +12,8 @@ class TextDataset(Dataset):
         self.test = test
         print("========> LOADING DATASET <========")
         self.data = pd.read_csv(path).reset_index()
+        self.mean = 6.5502
+        self.std = 0.9601
 
     def __len__(self):
         return len(self.data)
@@ -23,6 +25,7 @@ class TextDataset(Dataset):
 
             x = {"string": string, "type_id": type_id}
 
+            length = (min(math.log(length), 12) - self.mean) / self.std
             return x, np.float32(length)
 
         _, product_id, title, bullet_points, description, type_id = self.data.iloc[idx]
@@ -47,7 +50,7 @@ class EmbeddingDataset(Dataset):
 
     def __getitem__(self, idx):
         _, length = self.targets.iloc[idx]
-        length = (min(math.log(length), 12) - self.mean ) / self.std
+        length = (min(math.log(length), 12) - self.mean) / self.std
         embedding = self.embeddings[idx]
 
         return embedding, length

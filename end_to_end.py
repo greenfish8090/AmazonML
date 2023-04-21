@@ -114,6 +114,8 @@ def val(model, val_loader, args):
             output = model(x, device=args.device)
             loss = loss_fn(output.squeeze(), y)
             losses.append(loss.item())
+            output = torch.exp(output * val_loader.dataset.std + val_loader.dataset.mean)
+            y = torch.exp(y * val_loader.dataset.std + val_loader.dataset.mean)
             mape += torch.sum(torch.abs(output - y) / (torch.abs(y) + 1e-8))
             if i >= 500:
                 break
