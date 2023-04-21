@@ -28,7 +28,7 @@ class TextDataset(Dataset):
 
 
 class EmbeddingDataset(Dataset):
-    def __init__(self, csv_path, embeddings_path, seed=421):
+    def __init__(self, embeddings_path, csv_path, seed=421):
         # Reading and preprocessing dataset
         print("========> LOADING DATASET <========")
         self.targets = pd.read_csv(csv_path, usecols=["product_length"]).reset_index()
