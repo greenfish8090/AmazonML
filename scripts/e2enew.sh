@@ -7,7 +7,7 @@
 #OAR --stderr outputs/%jobname%.%jobid%.err
 
 echo "==================RUN SCRIPT=================="
-echo "$(cat scripts/e2e.sh)"
+echo "$(cat scripts/e2enew.sh)"
 echo -e "==================RUN SCRIPT==================\n"
 module load cuda/10.2
 module load cudnn/7.6-cuda-10.2

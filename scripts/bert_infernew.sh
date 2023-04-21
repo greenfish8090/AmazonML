@@ -1,13 +1,14 @@
 #/bin/bash
 
-#OAR -p gpu='YES' and gpucapability>='7.0' and gpumem>='24000' and host='nefgpu46.inria.fr'
-#OAR -l /nodes=1/gpunum=1,walltime=24:00:00
-#OAR --name e2e
+#OAR -p gpu='YES' and gpucapability>='7.0' and gpumem>='24000'
+#OAR -t besteffort
+#OAR -l /nodes=1/gpunum=1,walltime=48:00:00
+#OAR --name bert_infer_test
 #OAR --stdout outputs/%jobname%.%jobid%.out
 #OAR --stderr outputs/%jobname%.%jobid%.err
 
 echo "==================RUN SCRIPT=================="
-echo "$(cat scripts/e2e.sh)"
+echo "$(cat scripts/bert_infernew.sh)"
 echo -e "==================RUN SCRIPT==================\n"
 module load cuda/10.2
 module load cudnn/7.6-cuda-10.2
@@ -20,6 +21,6 @@ cat $OAR_RESOURCE_PROPERTIES_FILE
 
 nvidia-smi
 
-python end_to_end.py --batch_size 32 --num_workers 0 --epochs 3
+python bert_inference.py --batch_size 128 --num_workers 0
 
 nvidia-smi

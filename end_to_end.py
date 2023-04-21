@@ -44,7 +44,7 @@ def save_checkpoint(state, is_best, args):
                 os.remove(past_best[0])
             except:
                 pass
-        torch.save(state, os.path.join(args.save_dir, f"model_best_epoch_{state['iter']}.pth.tar"))
+        torch.save(state, os.path.join(args.save_dir, f"model_best_iter_{state['iter']}.pth.tar"))
 
 
 def train_one_epoch(model, optimizer, train_loader, val_loader, args):
@@ -52,23 +52,16 @@ def train_one_epoch(model, optimizer, train_loader, val_loader, args):
     loss_fn = torch.nn.MSELoss()
     losses = []
     batch_start_time = time.time()
-    for i, (x, y) in enumerate(tqdm(train_loader)):
-        print(f"Batch time: {time.time() - batch_start_time}")
-
+    for i, (x, y) in enumerate(train_loader):
         B = len(y)
-        forward_time = time.time()
         output = model(x, device=args.device)
-        print(f"Forward time: {time.time() - forward_time}")
         loss = loss_fn(output.squeeze(), y.to(args.device))
 
-        step_time = time.time()
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        print(f"Step time: {time.time() - step_time}")
 
         losses.append(loss.item())
-        args.iter += B
 
         if i % args.val_every == 0:
             print("Validating...")
@@ -97,11 +90,14 @@ def train_one_epoch(model, optimizer, train_loader, val_loader, args):
             print("Saved model")
 
         if i % args.log_every == 0:
-            print(f"Step: {i} | Loss: {loss.item()}")
+            print(f"[{i}] Loss: {loss.item()}")
             args.writer.add_scalar("Train/loss", loss.item(), args.iter)
 
         torch.cuda.empty_cache()
+        print(f"[{i}] Batch time: {time.time() - batch_start_time}")
         batch_start_time = time.time()
+        args.iter += B
+
     return np.mean(losses)
 
 
@@ -146,7 +142,7 @@ def main(args):
     params = []
     for n, p in model.named_parameters():
         if "transformer" in n:
-            params.append({"params": p, "lr": args.lr / 100})
+            params.append({"params": p, "lr": args.lr / 10})
         else:
             params.append({"params": p, "lr": args.lr})
 
@@ -169,6 +165,10 @@ def main(args):
         args.best_val_mape = np.inf
         args.start_epoch = 0
         args.iter = 0
+
+    print("Checking gradients")
+    for name, param in model.named_parameters():
+        print(f"{name}: {param.requires_grad}")
     train(model, optimizer, train_loader, val_loader, args)
 
 
@@ -177,9 +177,9 @@ if __name__ == "__main__":
     # Training
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--val_every", type=int, default=500)
+    parser.add_argument("--val_every", type=int, default=5000)
     parser.add_argument("--save_every", type=int, default=500)
-    parser.add_argument("--log_every", type=int, default=10)
+    parser.add_argument("--log_every", type=int, default=1)
     parser.add_argument("--run_name", type=str, default="v0")
     parser.add_argument("--resume", type=str, default="")
     parser.add_argument("--batch_size", type=int, default=32)

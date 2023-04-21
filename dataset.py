@@ -6,8 +6,9 @@ from tqdm import tqdm
 
 
 class TextDataset(Dataset):
-    def __init__(self, path="dataset/train.csv", seed=421):
+    def __init__(self, path="dataset/train.csv", test=False, seed=421):
         # Reading and preprocessing dataset
+        self.test = test
         print("========> LOADING DATASET <========")
         self.data = pd.read_csv(path).reset_index()
 
@@ -15,12 +16,20 @@ class TextDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        _, product_id, title, bullet_points, description, type_id, length = self.data.iloc[idx]
+        if not self.test:
+            _, product_id, title, bullet_points, description, type_id, length = self.data.iloc[idx]
+            string = f"Title: {title}, Bullet Points: {bullet_points}, Description: {description}"
+
+            x = {"string": string, "type_id": type_id}
+
+            return x, np.float32(length)
+
+        _, product_id, title, bullet_points, description, type_id = self.data.iloc[idx]
         string = f"Title: {title}, Bullet Points: {bullet_points}, Description: {description}"
 
         x = {"string": string, "type_id": type_id}
 
-        return x, np.float32(length)
+        return x
 
 
 class EmbeddingDataset(Dataset):
