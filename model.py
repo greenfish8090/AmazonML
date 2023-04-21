@@ -17,7 +17,7 @@ class Regressor(nn.Module):
         self.dropout = nn.Dropout(p=0.2)
 
         self.batchnorm1 = nn.BatchNorm1d(512)
-        self.batchnorm2 = nn.BatchNorm1d(254)
+        self.batchnorm2 = nn.BatchNorm1d(256)
         self.batchnorm3 = nn.BatchNorm1d(128)
         self.batchnorm4 = nn.BatchNorm1d(32)
 

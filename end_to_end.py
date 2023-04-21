@@ -1,6 +1,8 @@
 import argparse
+import builtins
 import glob
 import os
+from functools import partial
 
 import numpy as np
 import torch
@@ -8,41 +10,25 @@ from lion_pytorch import Lion
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+import time
 
 from dataset import TextDataset
 from model import TransformerRegressor
+
+builtins.print = partial(print, flush=True)
 
 
 def train(model, optimizer, train_loader, val_loader, args):
     for epoch in range(args.start_epoch, args.epochs):
         print(f"Epoch: {epoch}")
-        train_loss = train_one_epoch(model, optimizer, train_loader, args)
-        val_loss, val_mape = val(model, val_loader, args)
-        print(
-            f"Train Loss: {train_loss} | Val Loss: {val_loss} | Val MAPE: {val_mape} | Best Val MAPE: {args.best_val_mape}"
-        )
-        args.writer.add_scalar("Epoch/train_loss", train_loss, epoch)
-        args.writer.add_scalar("Epoch/val_loss", val_loss, epoch)
-        args.writer.add_scalar("Epoch/val MAPE", val_mape, epoch)
-        is_best = val_mape < args.best_val_mape
-        if is_best:
-            args.best_val_mape = val_mape
-        state = {
-            "epoch": epoch,
-            "iter": args.iter,
-            "state_dict": model.state_dict(),
-            "best_val_mape": args.best_val_mape,
-            "optimizer": optimizer.state_dict(),
-        }
-        if epoch % args.save_every == 0:
-            save_checkpoint(state, is_best, args)
-            print("Saved model")
+        args.epoch = epoch
+        train_loss = train_one_epoch(model, optimizer, train_loader, val_loader, args)
 
 
 def save_checkpoint(state, is_best, args):
-    torch.save(state, os.path.join(args.save_dir, f"epoch_{state['epoch']}.pth.tar"))
+    torch.save(state, os.path.join(args.save_dir, f"iter_{state['iter']}.pth.tar"))
     last_epoch_path = os.path.join(
-        args.save_dir, f"epoch_{state['epoch'] - args.save_every}.pth.tar"
+        args.save_dir, f"iter_{state['iter'] - args.save_every*args.batch_size}.pth.tar"
     )
 
     try:
@@ -58,27 +44,64 @@ def save_checkpoint(state, is_best, args):
                 os.remove(past_best[0])
             except:
                 pass
-        torch.save(state, os.path.join(args.save_dir, f"model_best_epoch_{state['epoch']}.pth.tar"))
+        torch.save(state, os.path.join(args.save_dir, f"model_best_epoch_{state['iter']}.pth.tar"))
 
 
-def train_one_epoch(model, optimizer, train_loader, args):
+def train_one_epoch(model, optimizer, train_loader, val_loader, args):
     model.train()
     loss_fn = torch.nn.MSELoss()
     losses = []
+    batch_start_time = time.time()
     for i, (x, y) in enumerate(tqdm(train_loader)):
+        print(f"Batch time: {time.time() - batch_start_time}")
+
         B = len(y)
+        forward_time = time.time()
         output = model(x, device=args.device)
+        print(f"Forward time: {time.time() - forward_time}")
         loss = loss_fn(output.squeeze(), y.to(args.device))
 
+        step_time = time.time()
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        print(f"Step time: {time.time() - step_time}")
 
         losses.append(loss.item())
         args.iter += B
+
+        if i % args.val_every == 0:
+            print("Validating...")
+            val_time = time.time()
+            train_loss = np.mean(losses)
+            val_loss, val_mape = val(model, val_loader, args)
+            print(
+                f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss} | Val MAPE: {val_mape} | Best Val MAPE: {args.best_val_mape}"
+            )
+            args.writer.add_scalar("Val/loss", val_loss, args.iter)
+            args.writer.add_scalar("Val/MAPE", val_mape, args.iter)
+            is_best = val_mape < args.best_val_mape
+            if is_best:
+                args.best_val_mape = val_mape
+            print(f"Val time: {time.time() - val_time}")
+
+        if i % args.save_every == 0:
+            state = {
+                "epoch": args.epoch,
+                "iter": args.iter,
+                "state_dict": model.state_dict(),
+                "best_val_mape": args.best_val_mape,
+                "optimizer": optimizer.state_dict(),
+            }
+            save_checkpoint(state, is_best, args)
+            print("Saved model")
+
         if i % args.log_every == 0:
             print(f"Step: {i} | Loss: {loss.item()}")
-            args.writer.add_scalar("Iter/train_loss", loss.item(), args.iter)
+            args.writer.add_scalar("Train/loss", loss.item(), args.iter)
+
+        torch.cuda.empty_cache()
+        batch_start_time = time.time()
     return np.mean(losses)
 
 
@@ -88,13 +111,17 @@ def val(model, val_loader, args):
     losses = []
     mape = 0
     with torch.no_grad():
-        for i, (x, y) in enumerate(val_loader):
+        total = 0
+        for i, (x, y) in enumerate(tqdm(val_loader)):
+            total += len(y)
             y = y.to(args.device)
             output = model(x, device=args.device)
             loss = loss_fn(output.squeeze(), y)
             losses.append(loss.item())
             mape += torch.sum(torch.abs(output - y) / (torch.abs(y) + 1e-8))
-    return np.mean(losses), mape.item() / len(val_loader.dataset)
+            if i >= 500:
+                break
+    return np.mean(losses), mape.item() / total
 
 
 def main(args):
@@ -110,7 +137,7 @@ def main(args):
         train_set, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=False
     )
     val_loader = DataLoader(
-        val_set, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=False
+        val_set, batch_size=args.batch_size * 2, num_workers=args.num_workers, shuffle=False
     )
     print(f"Train loader size: {len(train_loader)}")
     print(f"Val loader size: {len(val_loader)}")
@@ -150,8 +177,9 @@ if __name__ == "__main__":
     # Training
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--val_every", type=int, default=500)
+    parser.add_argument("--save_every", type=int, default=500)
     parser.add_argument("--log_every", type=int, default=10)
-    parser.add_argument("--save_every", type=int, default=1)
     parser.add_argument("--run_name", type=str, default="v0")
     parser.add_argument("--resume", type=str, default="")
     parser.add_argument("--batch_size", type=int, default=32)
