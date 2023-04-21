@@ -31,7 +31,7 @@ class EmbeddingDataset(Dataset):
     def __init__(self, embeddings_path, csv_path, seed=421):
         # Reading and preprocessing dataset
         print("========> LOADING DATASET <========")
-        self.targets = pd.read_csv(csv_path, usecols=["product_length"]).reset_index()
+        self.targets = pd.read_csv(csv_path, usecols=["PRODUCT_LENGTH"]).reset_index()
         self.embeddings = np.load(embeddings_path)
 
     def __len__(self):
