@@ -13,7 +13,7 @@ class TextDataset(Dataset):
 
     def __len__(self):
         return len(self.data)
-    
+
     def __getitem__(self, idx):
         _, product_id, title, bullet_points, description, type_id, length = self.data.iloc[idx]
         string = f"Title: {title}, Bullet Points: {bullet_points}, Description: {description}"
@@ -26,6 +26,7 @@ class TextDataset(Dataset):
 
         return sample
 
+
 class EmbeddingDataset(Dataset):
     def __init__(self, csv_path, embeddings_path, seed=421):
         # Reading and preprocessing dataset
@@ -35,7 +36,7 @@ class EmbeddingDataset(Dataset):
 
     def __len__(self):
         return len(self.targets)
-    
+
     def __getitem__(self, idx):
         _, length = self.targets.iloc[idx]
         embedding = self.embeddings[idx]

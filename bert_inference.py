@@ -10,7 +10,6 @@ from dataset import TextDataset
 
 
 def main(args):
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
     train_set = TextDataset(path="dataset/split_train.csv")
@@ -20,16 +19,10 @@ def main(args):
     print(f"Val set size: {len(val_set)}")
 
     train_loader = DataLoader(
-        train_set,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        shuffle=False
+        train_set, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=False
     )
     val_loader = DataLoader(
-        val_set,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        shuffle=False
+        val_set, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=False
     )
     print(f"Train loader size: {len(train_loader)}")
     print(f"Val loader size: {len(val_loader)}")
@@ -48,7 +41,7 @@ def main(args):
             total += B
             if i <= 6800:
                 continue
-            print(i, total-B, total, flush=True)
+            print(i, total - B, total, flush=True)
             inp = tokenizer(
                 x["string"],
                 return_tensors="pt",
@@ -57,17 +50,21 @@ def main(args):
             )
             inp = {k: v.to(device) for k, v in inp.items()}
             output = model(**inp)
-            train_embeddings[total-B:total, :] = output[0][:, 0, :].detach().cpu().numpy()
+            train_embeddings[total - B : total, :] = output[0][:, 0, :].detach().cpu().numpy()
 
             if i % 400 == 0:
-                with open(f"dataset/{args.model.replace('-', '_')}_train_embeddings_{i}.npy", "wb") as f:
+                with open(
+                    f"dataset/{args.model.replace('-', '_')}_train_embeddings_{i}.npy", "wb"
+                ) as f:
                     np.save(f, train_embeddings)
                 ## remove previous file
                 try:
-                    os.remove(f"dataset/{args.model.replace('-', '_')}_train_embeddings_{i-400}.npy")
+                    os.remove(
+                        f"dataset/{args.model.replace('-', '_')}_train_embeddings_{i-400}.npy"
+                    )
                 except:
                     pass
-        
+
         with open(f"dataset/{args.model.replace('-', '_')}_train_embeddings.npy", "wb") as f:
             np.save(f, train_embeddings)
 
@@ -76,7 +73,7 @@ def main(args):
         for i, x in enumerate(val_loader):
             B = len(x["string"])
             total += B
-            print(i, total-B, total, flush=True)
+            print(i, total - B, total, flush=True)
             inp = tokenizer(
                 x["string"],
                 return_tensors="pt",
@@ -85,19 +82,22 @@ def main(args):
             )
             inp = {k: v.to(device) for k, v in inp.items()}
             output = model(**inp)
-            val_embeddings[total-B:total, :] = output[0][:, 0, :].detach().cpu().numpy()
+            val_embeddings[total - B : total, :] = output[0][:, 0, :].detach().cpu().numpy()
 
             if i % 400 == 0:
-                with open(f"dataset/{args.model.replace('-', '_')}_val_embeddings_{i}.npy", "wb") as f:
+                with open(
+                    f"dataset/{args.model.replace('-', '_')}_val_embeddings_{i}.npy", "wb"
+                ) as f:
                     np.save(f, val_embeddings)
                 ## remove previous file
                 try:
                     os.remove(f"dataset/{args.model.replace('-', '_')}_val_embeddings_{i-400}.npy")
                 except:
                     pass
-    
+
         with open(f"dataset/{args.model.replace('-', '_')}_val_embeddings.npy", "wb") as f:
             np.save(f, val_embeddings)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
