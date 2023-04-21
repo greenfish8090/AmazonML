@@ -2,8 +2,8 @@
 
 #OAR -p gpu='YES' and gpucapability>='7.0' and gpumem>='24000'
 #OAR -t besteffort
-#OAR -l /nodes=1/gpunum=1,walltime=10:00:00
-#OAR --name bert_infer
+#OAR -l /nodes=1/gpunum=1,walltime=48:00:00
+#OAR --name train
 #OAR --stdout outputs/%jobname%.%jobid%.out
 #OAR --stderr outputs/%jobname%.%jobid%.err
 
