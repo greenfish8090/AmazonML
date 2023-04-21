@@ -1,12 +1,24 @@
 import torch
 from torch import nn
 from model import Regressor
-from transformers import AutoTokenizer, AutoModel
-from dataset import EmbeddingDataset
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, Dataset
 from torch import optim
 import argparse
+import numpy as np
+import pandas as pd
+import os
 
+
+class TDataset(Dataset):
+    def __init__(self, path):
+        self.data = np.load(path)
+        self.values = pd.read_csv('dataset/train.csv')['PRODUCT_LENGTH'].values().tolist()
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx], self.values[idx]
 
 class Trainer(nn.Module):
     def __init__(self, args, pred=False):
@@ -15,7 +27,7 @@ class Trainer(nn.Module):
         self.device = "cuda" if torch.cuda.is_available() else "cpu" 
         self.get_model(self.args.features) # Creating Regressor
         if not pred:
-            self.get_data(self.args.seed, self.args.batch_size) # Creating Dataloaders for Train and Val
+            self.get_data(self.args.seed, self.args.batch_size) # Creating Dataloaders for Train and Test
             self.get_training_utils() # Creating Optimizer
 
         # Variables to track training
@@ -23,17 +35,18 @@ class Trainer(nn.Module):
         self.mape = None 
         self.best_mape = None
         self.last_mape = None
+
+        if not os.path.exists(self.args.save):
+            os.mkdir(self.args.save)
         
     # Creating regressor
-    def get_model(self, features=None):
+    def get_model(self, features=768):
         self.regressor = Regressor(features).to(self.device) 
 
     # Creating Dataloaders and Datasets
     def get_data(self, seed, batch_size):
-        self.train_set = EmbeddingDataset(csv_path=self.args.train_data_path)
-        self.val_set = EmbeddingDataset(csv_path=self.args.val_data_path)
-        self.train_loader = DataLoader(self.train_set, batch_size=batch_size, shuffle=True)
-        self.val_loader = DataLoader(self.val_set, batch_size=batch_size, shuffle=False)
+        self.trainloader = DataLoader(TDataset(self.args.train_data_path), batch_size=batch_size, shuffle=True)
+        self.testloader = DataLoader(TDataset(self.args.test_data_path), batch_size=batch_size, shuffle=False)
 
     # Creating Optimizer
     def get_training_utils(self):
@@ -46,28 +59,22 @@ class Trainer(nn.Module):
     # Training loop for one epoch using complete trainset
     def train_epoch(self, epoch):
         self.regressor.train()
-        loss_fn = nn.MSELoss()
-        for batch_idx, (emb, trg) in enumerate(self.train_loader):
-            emb = emb.to(self.device)
-            trg = trg.to(self.device)
-
-            output = self(emb)
-            loss = loss_fn(output, trg)
-
+        for batch_idx, (emb, val) in enumerate(self.trainloader):
             self.optimizer.zero_grad()
+            output = self(emb)
+            loss = nn.MSELoss()(output, val.to(self.device))
             loss.backward()
             self.optimizer.step()
-
             if batch_idx % self.args.log_interval == 0:
                 print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(epoch, batch_idx * len(emb), len(self.trainloader.dataset),
                     100. * batch_idx / len(self.trainloader), loss.item()))
         return loss
 
-    # Testing loop for one epoch using complete val_set
-    def val(self, epoch):
+    # Testing loop for one epoch using complete testset
+    def test(self, epoch):
         self.regressor.eval()
         mape = 0
-        for _, (emb, val) in enumerate(self.val_loader):
+        for _, (emb, val) in enumerate(self.testloader):
             output = self(emb)
             mape += torch.sum(torch.abs(output-val) / torch.max(torch.abs(val), 1e-7))
             
@@ -82,26 +89,27 @@ class Trainer(nn.Module):
         for epoch in range(1, self.args.epochs + 1):
             loss = self.train_epoch(epoch)
             self.loss.append(loss)
-            if epoch % self.args.val_interval == 0:
-                mape = self.val(epoch)
+            if epoch % self.args.test_interval == 0:
+                mape = self.test(epoch)
                 self.mape.append(mape)
                 if mape < self.best_mape:
-                    self.save('best')
+                    self.save('best', epoch)
                     self.best_mape = mape
             
-        self.last_mape = self.val('INTMAX')
-        self.save('last')
+        self.last_mape = self.test('INTMAX')
+        self.save('last', epoch)
 
     # Saving Model State
-    def save(self, star):
+    def save(self, star, epoch):
         save_dict = {
             'model':self.regressor.state_dict(), \
             'loss':self.loss, \
             'mape':self.mape, \
             'best_mape': self.best_mape, \
-            'last_mape':self.last_mape, 
+            'last_mape':self.last_mape, \
+            'epoch': epoch,
             }
-        torch.save(save_dict, "{}_{}.pt".format(self.args.save, star))
+        torch.save(save_dict, "{}/{}.pt".format(self.args.save, star))
         print("{} model saved".format(star))
     
     # Loading Model State
@@ -110,18 +118,19 @@ class Trainer(nn.Module):
 
 def main():
     parser = argparse.ArgumentParser(description='Null')
-    parser.add_argument('--train_data_path', '-d', default='', type=str)
-    parser.add_argument('--val_data_path', '-d', default='', type=str)
+    parser.add_argument('--train_data_path', '-dtr', default='', type=str)
+    parser.add_argument('--test_data_path', '-dte', default='', type=str)
     parser.add_argument('--epochs', '-e', default=100, type=int)
-    parser.add_argument('--lr', '-l', default=1e-3, type=float)
+    parser.add_argument('--lr', '-l', default=0.01, type=float)
     parser.add_argument('--batch_size', '-b', default=8, type=int)
-    parser.add_argument('--features', '-f', default=768, type=int)
+    parser.add_argument('--features', '-f', default=384, type=int)
     parser.add_argument('--seed', '-r', default=421, type=int)
     parser.add_argument('--log_interval', '-q', default=5, type=int)
-    parser.add_argument('--val_interval', '-t', default=1, type=int)
+    parser.add_argument('--test_interval', '-t', default=1, type=int)
     parser.add_argument('--save', '-s', default='./', type=str)
     args = parser.parse_args()
-
+    
+    # python train.py -dtr dataset/bert_base_uncased_train_embeddings.npy -dte dataset/bert_base_uncased_train_embeddings.npy -e 200 -b 64 -f 768 -q 10000 -t 5 -s model/
     trainer = Trainer(args)
     trainer.train()
 
