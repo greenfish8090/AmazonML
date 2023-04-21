@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
 import torch
@@ -24,3 +25,19 @@ class TextDataset(Dataset):
         }
 
         return sample
+
+class EmbeddingDataset(Dataset):
+    def __init__(self, csv_path, embeddings_path, seed=421):
+        # Reading and preprocessing dataset
+        print("========> LOADING DATASET <========")
+        self.targets = pd.read_csv(csv_path, usecols=["product_length"]).reset_index()
+        self.embeddings = np.load(embeddings_path)
+
+    def __len__(self):
+        return len(self.targets)
+    
+    def __getitem__(self, idx):
+        _, length = self.targets.iloc[idx]
+        embedding = self.embeddings[idx]
+
+        return embedding, length
