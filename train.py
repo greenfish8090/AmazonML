@@ -7,21 +7,8 @@ import argparse
 import numpy as np
 import pandas as pd
 import os
+from dataset import EmbeddingDataset
 
-
-class TDataset(Dataset):
-    def __init__(self, path, train=True):
-        self.data = np.load(path)
-        if train:
-            self.values = pd.read_csv('/home/pbalaji/AmazonML/dataset/split_train.csv')['PRODUCT_LENGTH'].values.tolist()
-        else:
-            self.values =  pd.read_csv('/home/pbalaji/AmazonML/dataset/split_val.csv')['PRODUCT_LENGTH'].values.tolist()
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        return torch.tensor(self.data[idx]), torch.tensor(self.values[idx])
 
 class Trainer(nn.Module):
     def __init__(self, args, pred=False):
@@ -42,8 +29,8 @@ class Trainer(nn.Module):
 
     # Creating Dataloaders and Datasets
     def get_data(self, seed, batch_size):
-        self.trainloader = DataLoader(TDataset(self.args.train_data_path, train=True), batch_size=batch_size, shuffle=True)
-        self.valloader = DataLoader(TDataset(self.args.val_data_path, train=False), batch_size=batch_size, shuffle=False)
+        self.trainloader = DataLoader(EmbeddingDataset(self.args.train_data_path, self.args.train_csv_path), batch_size=batch_size, shuffle=True)
+        self.valloader = DataLoader(EmbeddingDataset(self.args.val_data_path, self.args.val_csv_path), batch_size=batch_size, shuffle=False)
 
     # Creating Optimizer
     def get_training_utils(self):
@@ -61,7 +48,7 @@ class Trainer(nn.Module):
             self.optimizer.zero_grad()
             output = self(emb.to(self.device, torch.float64))
             loss = nn.MSELoss()(output, val.to(self.device, torch.float64))
-            epoch_loss += loss
+            epoch_loss += loss.item()
             loss.backward()
             self.optimizer.step()
             if batch_idx % self.args.log_interval == 0:
@@ -78,8 +65,8 @@ class Trainer(nn.Module):
             emb = emb.to(self.device, torch.float64)
             val = val.to(self.device, torch.float64)
             output = self(emb).squeeze(1)
-            mape += torch.sum(torch.abs(output-val) / (torch.abs(val) + 1e-8))
-            mse += nn.MSELoss()(output, val)
+            mape += torch.sum(torch.abs(output-val) / (torch.abs(val) + 1e-8)).item()
+            mse += nn.MSELoss()(output, val).item()
         print("MAPE Loss at epoch {} is {}% and MSE Loss is {}".format(epoch, 100 * mape/len(self.valloader.dataset), mse/len(self.valloader.dataset)))
         return mape, mse
 
@@ -122,16 +109,18 @@ class Trainer(nn.Module):
 
 def main():
     parser = argparse.ArgumentParser(description='Null')
-    parser.add_argument('--train_data_path', '-dtr', default='', type=str)
-    parser.add_argument('--val_data_path', '-dte', default='', type=str)
+    parser.add_argument('--train_data_path', '-dtr', default='/home/pbalaji/AmazonML/dataset/bert_base_uncased_train_embeddings.npy', type=str)
+    parser.add_argument('--val_data_path', '-dte', default='/home/pbalaji/AmazonML/dataset/bert_base_uncased_train_embeddings.npy', type=str)
+    parser.add_argument('--train_csv_path', '-ctr', default='/home/pbalaji/AmazonML/dataset/split_train.csv', type=str)
+    parser.add_argument('--val_csv_path', '-cte', default='/home/pbalaji/AmazonML/dataset/split_val.csv', type=str)
     parser.add_argument('--epochs', '-e', default=100, type=int)
     parser.add_argument('--lr', '-l', default=0.01, type=float)
-    parser.add_argument('--batch_size', '-b', default=8, type=int)
-    parser.add_argument('--features', '-f', default=384, type=int)
+    parser.add_argument('--batch_size', '-b', default=64, type=int)
+    parser.add_argument('--features', '-f', default=768, type=int)
     parser.add_argument('--seed', '-r', default=421, type=int)
-    parser.add_argument('--log_interval', '-q', default=5, type=int)
-    parser.add_argument('--val_interval', '-t', default=1, type=int)
-    parser.add_argument('--save', '-s', default='./', type=str)
+    parser.add_argument('--log_interval', '-q', default=100, type=int)
+    parser.add_argument('--val_interval', '-t', default=5, type=int)
+    parser.add_argument('--save', '-s', default='models/', type=str)
     args = parser.parse_args()
 
     # python train.py -dtr dataset/bert_base_uncased_train_embeddings.npy -dte dataset/bert_base_uncased_train_embeddings.npy -e 200 -b 64 -f 768 -q 10000 -t 5 -s model/
