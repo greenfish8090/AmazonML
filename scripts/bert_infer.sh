@@ -14,7 +14,7 @@ module load cuda/10.2
 module load cudnn/7.6-cuda-10.2
 module load gcc/6.2.0
 
-source activate amazonml
+source activate amazonmlnew
 python --version
 cat $OAR_NODEFILE
 cat $OAR_RESOURCE_PROPERTIES_FILE
