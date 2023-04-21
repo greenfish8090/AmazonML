@@ -18,13 +18,9 @@ class TextDataset(Dataset):
         _, product_id, title, bullet_points, description, type_id, length = self.data.iloc[idx]
         string = f"Title: {title}, Bullet Points: {bullet_points}, Description: {description}"
 
-        sample = {
-            "string": string,
-            "type_id": type_id,
-            "length": length,
-        }
+        x = {"string": string, "type_id": type_id}
 
-        return sample
+        return x, np.float32(length)
 
 
 class EmbeddingDataset(Dataset):

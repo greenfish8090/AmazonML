@@ -29,50 +29,52 @@ def main(args):
 
     tokenizer = BertTokenizer.from_pretrained(args.model)
     model = BertModel.from_pretrained(args.model).to(device)
-    train_embeddings = np.load("dataset/bert_base_uncased_train_embeddings_6800.npy")
-    val_embeddings = np.zeros((len(val_set), 768))
+    # train_embeddings = np.load("dataset/bert_base_uncased_train_embeddings_6800.npy")
+    val_embeddings = np.load("dataset/bert_base_uncased_val_embeddings_1200.npy")
 
     with torch.no_grad():
-        model.eval()
-        print("Train set")
-        total = 0
-        for i, x in enumerate(train_loader):
-            B = len(x["string"])
-            total += B
-            if i <= 6800:
-                continue
-            print(i, total - B, total, flush=True)
-            inp = tokenizer(
-                x["string"],
-                return_tensors="pt",
-                padding="max_length",
-                truncation=True,
-            )
-            inp = {k: v.to(device) for k, v in inp.items()}
-            output = model(**inp)
-            train_embeddings[total - B : total, :] = output[0][:, 0, :].detach().cpu().numpy()
+        # model.eval()
+        # print("Train set")
+        # total = 0
+        # for i, x in enumerate(train_loader):
+        #     B = len(x["string"])
+        #     total += B
+        #     if i <= 6800:
+        #         continue
+        #     print(i, total - B, total, flush=True)
+        #     inp = tokenizer(
+        #         x["string"],
+        #         return_tensors="pt",
+        #         padding="max_length",
+        #         truncation=True,
+        #     )
+        #     inp = {k: v.to(device) for k, v in inp.items()}
+        #     output = model(**inp)
+        #     train_embeddings[total - B : total, :] = output[0][:, 0, :].detach().cpu().numpy()
 
-            if i % 400 == 0:
-                with open(
-                    f"dataset/{args.model.replace('-', '_')}_train_embeddings_{i}.npy", "wb"
-                ) as f:
-                    np.save(f, train_embeddings)
-                ## remove previous file
-                try:
-                    os.remove(
-                        f"dataset/{args.model.replace('-', '_')}_train_embeddings_{i-400}.npy"
-                    )
-                except:
-                    pass
+        #     if i % 400 == 0:
+        #         with open(
+        #             f"dataset/{args.model.replace('-', '_')}_train_embeddings_{i}.npy", "wb"
+        #         ) as f:
+        #             np.save(f, train_embeddings)
+        #         ## remove previous file
+        #         try:
+        #             os.remove(
+        #                 f"dataset/{args.model.replace('-', '_')}_train_embeddings_{i-400}.npy"
+        #             )
+        #         except:
+        #             pass
 
-        with open(f"dataset/{args.model.replace('-', '_')}_train_embeddings.npy", "wb") as f:
-            np.save(f, train_embeddings)
+        # with open(f"dataset/{args.model.replace('-', '_')}_train_embeddings.npy", "wb") as f:
+        #     np.save(f, train_embeddings)
 
         print("Val set")
         total = 0
         for i, x in enumerate(val_loader):
             B = len(x["string"])
             total += B
+            if i <= 1200:
+                continue
             print(i, total - B, total, flush=True)
             inp = tokenizer(
                 x["string"],
