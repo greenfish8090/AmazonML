@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from dataset import TextDataset, TextEEDataset
-from model import TransformerEntityRegressor
+from model import TransformerRegressor
 
 builtins.print = partial(print, flush=True)
 
@@ -52,9 +52,9 @@ def train_one_epoch(model, optimizer, train_loader, val_loader, args):
     loss_fn = torch.nn.MSELoss()
     losses = []
     batch_start_time = time.time()
-    for i, (string, x, y) in enumerate(train_loader):
+    for i, (string, y) in enumerate(train_loader):
         B = len(y)
-        output = model(string=string, type_id=x, device=args.device)
+        output = model(string, device=args.device)
         y = y.to(args.device)
         loss = loss_fn(output.squeeze(), y.to(args.device))
         # loss = torch.mean(torch.abs(output - y) / (torch.abs(y) + 1e-8))
@@ -111,10 +111,10 @@ def val(model, val_loader, args):
     mape = 0
     with torch.no_grad():
         total = 0
-        for i, (string, x, y) in enumerate(tqdm(val_loader)):
+        for i, (string, y) in enumerate(tqdm(val_loader)):
             total += len(y)
             y = y.to(args.device)
-            output = model(string, x, device=args.device).squeeze()
+            output = model(string, device=args.device).squeeze()
             loss = loss_fn(output, y)
             losses.append(loss.item())
             if args.transform:
@@ -129,27 +129,11 @@ def val(model, val_loader, args):
 def main(args):
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {args.device}")
-    df = pd.read_csv("dataset/split_train.csv")
-    vc = dict(df["PRODUCT_TYPE_ID"].value_counts())
-    id_to_ind = {}
-    default_ind = 0
-    for k, v in vc.items():
-        if v > 10:
-            id_to_ind[k] = default_ind
-            default_ind += 1
-        else:
-            id_to_ind[k] = default_ind
-    train_set = TextEEDataset(
+    train_set = TextDataset(
         path="dataset/split_train.csv",
-        id_to_ind=id_to_ind,
-        default_ind=default_ind,
-        transform=args.transform,
     )
-    val_set = TextEEDataset(
+    val_set = TextDataset(
         path="dataset/split_val.csv",
-        id_to_ind=id_to_ind,
-        default_ind=default_ind,
-        transform=args.transform,
     )
 
     print(f"Train set size: {len(train_set)}")
@@ -164,17 +148,18 @@ def main(args):
     print(f"Train loader size: {len(train_loader)}")
     print(f"Val loader size: {len(val_loader)}")
 
-    model = TransformerEntityRegressor(
-        transformer=args.model, embedding_dim=32, num_embeddings=len(id_to_ind)
-    ).to(args.device)
+    model = TransformerRegressor(transformer=args.model).to(args.device)
+    regressor_ckpt = torch.load("/home/tdhamija/AmazonML/models/best.pt")
+    model.regressor.load_state_dict(regressor_ckpt["model"])
+    print("Loaded regressor weights")
     params = []
-    for n, p in model.named_parameters():
-        if "transformer" in n:
-            params.append({"params": p, "lr": args.lr / 10})
-        else:
-            params.append({"params": p, "lr": args.lr})
+    # for n, p in model.named_parameters():
+    #     if "transformer" in n:
+    #         params.append({"params": p, "lr": args.lr / 10})
+    #     else:
+    #         params.append({"params": p, "lr": args.lr})
 
-    optimizer = torch.optim.Adam(params, lr=args.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     args.save_dir = f"checkpoints/{args.run_name}"
     os.makedirs(args.save_dir, exist_ok=True)
@@ -204,18 +189,19 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # Training
     parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--val_every", type=int, default=1000)
-    parser.add_argument("--save_every", type=int, default=1000)
+    parser.add_argument("--save_every", type=int, default=500)
     parser.add_argument("--log_every", type=int, default=1)
     parser.add_argument("--run_name", type=str, default="v0")
     parser.add_argument("--resume", type=str, default="")
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=2)
-    parser.add_argument("--transform", type=bool, default=False)
+    parser.add_argument("--transform", type=bool, default=True)
 
     # Model
     parser.add_argument("--model", type=str, default="bert-base-uncased")
 
     args = parser.parse_args()
+    assert args.transform == True, "Regressor was trained with transform"
     main(args)
