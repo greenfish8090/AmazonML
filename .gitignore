@@ -1,7 +1,8 @@
 *.code-workspace
 __pycache__
 data
-outputs
-logs
+out*
+logs*
 checkpoints
-scripts
+scripts*
+submission*

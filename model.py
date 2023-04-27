@@ -1,6 +1,6 @@
 from torch import nn
 import torch
-from transformers import BertModel, BertTokenizer
+from transformers import BertModel, BertTokenizer, RobertaModel, RobertaTokenizer
 
 
 class Regressor(nn.Module):
@@ -24,6 +24,33 @@ class Regressor(nn.Module):
         return self.reg(x)
 
 
+class Regressor2(nn.Module):
+    def __init__(self, num_feature):
+        super(Regressor2, self).__init__()
+
+        self.layer_1 = nn.Sequential(nn.Linear(num_feature, 512))
+        self.layer_2 = nn.Sequential(nn.Linear(512, 256))
+        self.reg = nn.Linear(256, 1)
+
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.2)
+
+        self.batchnorm1 = nn.BatchNorm1d(512)
+        self.batchnorm2 = nn.BatchNorm1d(256)
+
+    def forward(self, x):
+        x = self.layer_1(x)
+        x = self.batchnorm1(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+
+        x = self.layer_2(x)
+        x = self.batchnorm2(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        return self.reg(x)
+
+
 class EntityEmbedding(nn.Module):
     def __init__(self, embedding_dim, num_embeddings):
         super(EntityEmbedding, self).__init__()
@@ -44,8 +71,10 @@ class TransformerRegressor(nn.Module):
             self.transformer = BertModel.from_pretrained(transformer)
             self.tokenizer = BertTokenizer.from_pretrained(transformer)
             self.num_feature = 768
-        else:
-            raise NotImplementedError()
+        elif transformer == "roberta-base":
+            self.transformer = RobertaModel.from_pretrained(transformer)
+            self.tokenizer = RobertaTokenizer.from_pretrained(transformer)
+            self.num_feature = 768
 
         self.regressor = Regressor(self.num_feature)
 
@@ -63,15 +92,17 @@ class TransformerRegressor(nn.Module):
         return x
 
 
-class TransformerEntityRegressor(nn.Module):
+class TransformerEntityRegressorOld(nn.Module):
     def __init__(self, transformer, embedding_dim, num_embeddings):
         super().__init__()
         if transformer == "bert-base-uncased":
             self.transformer = BertModel.from_pretrained(transformer)
             self.tokenizer = BertTokenizer.from_pretrained(transformer)
             self.num_feature = 768
-        else:
-            raise NotImplementedError()
+        elif transformer == "roberta-base":
+            self.transformer = RobertaModel.from_pretrained(transformer)
+            self.tokenizer = RobertaTokenizer.from_pretrained(transformer)
+            self.num_feature = 768
 
         self.embedding = nn.Embedding(num_embeddings, embedding_dim)
         self.embedding_dim = embedding_dim
@@ -90,5 +121,31 @@ class TransformerEntityRegressor(nn.Module):
         output = self.transformer(**inp)
         cls = output[0][:, 0, :]
         x = self.embedding(type_id.to(device))
+        x = self.regressor(torch.cat([cls, x], dim=1))
+        return x
+
+
+class TransformerEntityRegressor(nn.Module):
+    def __init__(self, transformer, embedding_dim, num_embeddings):
+        super().__init__()
+        if transformer == "bert-base-uncased":
+            self.transformer = BertModel.from_pretrained(transformer)
+            self.tokenizer = BertTokenizer.from_pretrained(transformer)
+            self.num_feature = 768
+        elif transformer == "roberta-base":
+            self.transformer = RobertaModel.from_pretrained(transformer)
+            self.tokenizer = RobertaTokenizer.from_pretrained(transformer)
+            self.num_feature = 768
+
+        self.embedding = nn.Embedding(num_embeddings, embedding_dim)
+        self.embedding_dim = embedding_dim
+        self.num_embeddings = num_embeddings
+
+        self.regressor = Regressor2(self.num_feature + self.embedding_dim)
+
+    def forward(self, inp, type_id):
+        output = self.transformer(**inp)
+        cls = output[0][:, 0, :]
+        x = self.embedding(type_id)
         x = self.regressor(torch.cat([cls, x], dim=1))
         return x

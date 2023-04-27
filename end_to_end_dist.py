@@ -11,15 +11,16 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-
 from dataset import TextDataset, TextEEDataset
-from model import TransformerEntityRegressor, TransformerEntityRegressorOld
+from model import TransformerEntityRegressor
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from lion_pytorch import Lion
 
 builtins.print = partial(print, flush=True)
 
 
 def train(model, optimizer, train_loader, val_loader, args):
-    print("In train function")
     for epoch in range(args.start_epoch, args.epochs):
         print(f"Epoch: {epoch}")
         args.epoch = epoch
@@ -55,9 +56,17 @@ def train_one_epoch(model, optimizer, train_loader, val_loader, args):
     batch_start_time = time.time()
     for i, (string, x, y) in enumerate(train_loader):
         B = len(y)
-        output = model(string=string, type_id=x, device=args.device)
+        inp = model.module.tokenizer(
+            string,
+            return_tensors="pt",
+            padding="max_length",
+            truncation=True,
+        )
+        inp = {k: v.to(args.local_rank) for k, v in inp.items()}
+        x = x.to(args.local_rank)
+        output = model(inp, x)
         y = y.to(args.device)
-        loss = loss_fn(output.squeeze(), y.to(args.device))
+        loss = loss_fn(output.squeeze(), y)
         # loss = torch.mean(torch.abs(output - y) / (torch.abs(y) + 1e-8))
 
         optimizer.zero_grad()
@@ -75,25 +84,26 @@ def train_one_epoch(model, optimizer, train_loader, val_loader, args):
             print(
                 f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss} | Val MAPE: {val_mape} | Best Val MAPE: {args.best_val_mape}"
             )
-            args.writer.add_scalar("Val/loss", val_loss, args.iter)
-            args.writer.add_scalar("Val/MAPE", val_mape, args.iter)
+            if args.local_rank == 0:
+                args.writer.add_scalar("Val/loss", val_loss, args.iter)
+                args.writer.add_scalar("Val/MAPE", val_mape, args.iter)
             is_best = val_mape < args.best_val_mape
             if is_best:
                 args.best_val_mape = val_mape
             print(f"Val time: {time.time() - val_time}")
 
-        if i % args.save_every == 0:
+        if args.local_rank == 0 and i % args.save_every == 0:
             state = {
                 "epoch": args.epoch,
                 "iter": args.iter,
-                "state_dict": model.state_dict(),
+                "state_dict": model.module.state_dict(),
                 "best_val_mape": args.best_val_mape,
                 "optimizer": optimizer.state_dict(),
             }
             save_checkpoint(state, is_best, args)
             print("Saved model")
 
-        if i % args.log_every == 0:
+        if args.local_rank == 0 and i % args.log_every == 0:
             print(f"[{i}] Loss: {loss.item()}")
             args.writer.add_scalar("Train/loss", loss.item(), args.iter)
 
@@ -115,7 +125,14 @@ def val(model, val_loader, args):
         for i, (string, x, y) in enumerate(tqdm(val_loader)):
             total += len(y)
             y = y.to(args.device)
-            output = model(string, x, device=args.device).squeeze()
+            inp = model.module.tokenizer(
+                string,
+                return_tensors="pt",
+                padding="max_length",
+                truncation=True,
+            )
+            inp = {k: v.to(args.local_rank) for k, v in inp.items()}
+            output = model(inp, x).squeeze()
             loss = loss_fn(output, y)
             losses.append(loss.item())
             if args.transform:
@@ -128,8 +145,16 @@ def val(model, val_loader, args):
 
 
 def main(args):
-    args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Device: {args.device}")
+    args.device = args.local_rank
+
+    dist.init_process_group(backend="nccl", rank=args.local_rank)
+    print(f"Rank: {args.local_rank} | Size: {dist.get_world_size()}")
+
+    if args.local_rank != 0:
+        import builtins
+
+        builtins.print = lambda *args, **kwargs: None
+
     df = pd.read_csv("dataset/split_train.csv")
     vc = dict(df["PRODUCT_TYPE_ID"].value_counts())
     id_to_ind = {}
@@ -156,19 +181,36 @@ def main(args):
     print(f"Train set size: {len(train_set)}")
     print(f"Val set size: {len(val_set)}")
 
-    train_loader = DataLoader(
-        train_set, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True
+    train_loader = torch.utils.data.DataLoader(
+        train_set,
+        batch_size=args.batch_size // dist.get_world_size(),
+        sampler=torch.utils.data.distributed.DistributedSampler(
+            train_set,
+            num_replicas=dist.get_world_size(),
+            rank=args.local_rank,
+            shuffle=True,
+        ),
+        num_workers=args.num_workers,
     )
-    val_loader = DataLoader(
-        val_set, batch_size=args.batch_size * 2, num_workers=args.num_workers, shuffle=False
+    val_loader = torch.utils.data.DataLoader(
+        val_set,
+        batch_size=args.batch_size // dist.get_world_size(),
+        sampler=torch.utils.data.distributed.DistributedSampler(
+            val_set,
+            num_replicas=dist.get_world_size(),
+            rank=args.local_rank,
+            shuffle=False,
+        ),
+        num_workers=args.num_workers,
     )
     print(f"Train loader size: {len(train_loader)}")
     print(f"Val loader size: {len(val_loader)}")
 
     print(f"Using model: {args.model}")
-    model = TransformerEntityRegressorOld(
+    model = TransformerEntityRegressor(
         transformer=args.model, embedding_dim=32, num_embeddings=len(id_to_ind)
-    ).to(args.device)
+    ).to(args.local_rank)
+    model = DDP(model, device_ids=[args.local_rank], find_unused_parameters=True)
     params = []
     for n, p in model.named_parameters():
         if "transformer" in n:
@@ -176,17 +218,18 @@ def main(args):
         else:
             params.append({"params": p, "lr": args.lr})
 
-    optimizer = torch.optim.Adam(params, lr=args.lr, amsgrad=True)
+    optimizer = Lion(params, lr=args.lr)
 
-    args.save_dir = f"checkpoints/{args.run_name}"
-    os.makedirs(args.save_dir, exist_ok=True)
-    os.makedirs(f"logs/{args.run_name}", exist_ok=True)
-    args.writer = SummaryWriter(f"logs/{args.run_name}")
+    if args.local_rank == 0:
+        args.save_dir = f"checkpoints/{args.run_name}"
+        os.makedirs(args.save_dir, exist_ok=True)
+        os.makedirs(f"logs/{args.run_name}", exist_ok=True)
+        args.writer = SummaryWriter(f"logs/{args.run_name}")
 
     if args.resume:
         print("Resuming from checkpoint")
         state = torch.load(args.resume)
-        model.load_state_dict(state["state_dict"])
+        model.module.load_state_dict(state["state_dict"])
         # optimizer.load_state_dict(state["optimizer"])
         args.best_val_mape = state["best_val_mape"]
         args.start_epoch = state["epoch"] + 1
@@ -199,7 +242,6 @@ def main(args):
     print("Checking gradients")
     for name, param in model.named_parameters():
         print(f"{name}: {param.requires_grad}")
-    print("Starting training")
     train(model, optimizer, train_loader, val_loader, args)
 
 
@@ -207,7 +249,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # Training
     parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--lr", type=float, default=1e-6)
+    parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--val_every", type=int, default=1000)
     parser.add_argument("--save_every", type=int, default=1000)
     parser.add_argument("--log_every", type=int, default=1)
@@ -216,9 +258,12 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=2)
     parser.add_argument("--transform", type=bool, default=False)
+    parser.add_argument("--local_rank", type=int, default=-1)
 
     # Model
-    parser.add_argument("--model", type=str, default="bert-base-uncased")
+    parser.add_argument("--model", type=str, default="roberta-base")
 
     args = parser.parse_args()
+    if args.local_rank == -1:
+        args.local_rank = int(os.environ["LOCAL_RANK"])
     main(args)
