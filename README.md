@@ -1,6 +1,6 @@
 # Amazon ML
 ## Placed 2<sup>nd</sup> out of ~7k teams, 26k participants across India in the [Amazon ML Challenge 2023](https://www.hackerearth.com/challenges/new/competitive/amazon-ml-challenge-2023/)
-**Team Fishes: Tashvik Dhamija, Pranav Balaji, Adarsh Jha**
+**Team Fishes 🐠: [Tashvik Dhamija](https://github.com/TashvikDhamija), [Pranav Balaji](https://github.com/greenfish8090), [Adarsh Jha](https://github.com/Adarsh-Jha)**
 
 \
 This is our code for the hackathon where participants were tasked with developing a machine learning model that can accurately predict the length dimension of a product. Given that product length is crucial for packaging and storing products efficiently in the warehouse, and that it is also an important attribute that customers use to assess the product size before purchasing, this is an important task. The dataset provided included 2.2 million products, each with a product title, description, bullet points, product type ID, and product length.
@@ -25,3 +25,8 @@ Overall, our approach demonstrated that the use of pre-trained language models s
 \
 Architecture diagram:\
 ![Arch diagram](arch.jpg "Architure")
+
+Scope for improvement:
+- Better data preprocessing - outlier removal
+- Larger LM
+- Unsupervised domain adaptation
