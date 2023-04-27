@@ -4,5 +4,5 @@ data
 out*
 logs*
 checkpoints
-scripts_*
+scripts*
 submission*
