@@ -5,8 +5,7 @@
 \
 This is our code for the hackathon where participants were tasked with developing a machine learning model that can accurately predict the length dimension of a product. Given that product length is crucial for packaging and storing products efficiently in the warehouse, and that it is also an important attribute that customers use to assess the product size before purchasing, this is an important task. The dataset provided included 2.2 million products, each with a product title, description, bullet points, product type ID, and product length.
 
-
-We followed a series of steps:
+This was hacked together in a weekend and not much thought was given to code organization. We had to prioritize velocity of iteration so you might notice a few hard-coded values and a lot of code duplication. But if you're more interested in our overall approach, here it is:
 
 
 1. We first performed exploratory data analysis (EDA) to understand the distribution of the target values. We observed that the data was heavily skewed, concentrated with a lot of outliers, and approximately normal.
