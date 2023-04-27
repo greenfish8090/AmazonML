@@ -1,5 +1,5 @@
-# Amazon ML Challenge 2023
-## Placed 2<sup>nd</sup> out of ~7k teams
+# Amazon ML
+## Placed 2<sup>nd</sup> out of ~7k teams, 26k participants across India in the [Amazon ML Challenge 2023](https://www.hackerearth.com/challenges/new/competitive/amazon-ml-challenge-2023/)
 **Team Fishes: Tashvik Dhamija, Pranav Balaji, Adarsh Jha**
 
 \
