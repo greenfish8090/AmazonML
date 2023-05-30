@@ -12,10 +12,10 @@ This is our code for the hackathon where participants were tasked with developin
 This was hacked together in a weekend and not much thought was given to code organization. We had to prioritize velocity of iteration so you might notice a few hard-coded values and a lot of duplication. This is by no means a standard of *good* code, but it got the job done. However, if you're just interested in our overall approach, here it is:
 
 
-1. We first performed exploratory data analysis (EDA) to understand the distribution of the target values. We observed that the data was heavily skewed, concentrated with a lot of outliers, and approximately normal.
+1. We first performed exploratory data analysis (EDA) to understand the distribution of the target values. We observed that the data was heavily skewed, had a lot of outliers.
 2. We then preprocessed the data in the following ways:
-   1. We concatenated all the text features (product title, description, bullet points) into one to provide maximum context for BERT embeddings.
-   2. We took the logarithm of the target values to fix skewness.
+   1. We concatenated all the text features (product title, description, bullet points) into one to provide maximum context to BERT.
+   2. We took the logarithm of the target values to fix skewness and bring it to a gaussian shape.
    3. We clipped the logarithm of the target values at 12 to remove outliers.
    4. We normalized the data using the mean and standard deviation.
 3. In the first step, we used frozen BERT to generate embeddings and trained a shallow artificial neural network (ANN) to predict the preprocessed target values. This approach gave us a good result, but we knew that there was still room for improvement.
@@ -29,7 +29,7 @@ Overall, our approach demonstrated that the use of pre-trained language models s
 Architecture diagram:\
 ![Arch diagram](arch.jpg "Architure")
 
-Scope for improvement:
-- Better data preprocessing - outlier removal
-- Larger LM
+Scope for improvement, most to least impact:
+- Better data preprocessing (outlier removal) + Better ensembling strategiy
 - Unsupervised domain adaptation
+- Larger LM
